@@ -6,10 +6,14 @@ def main():
     server_socket.bind((HOST,PORT))
     server_socket.listen(5)
     print(f"server starting on {HOST}:{PORT}")
-    client_socket,client_address=server_socket.accept()
-    print(f"connection from {client_address}")
-    client_socket.close()
-    server_socket.close()
+        
+    while True:
+            client_socket,client_address=server_socket.accept()
+            print(f"connection from {client_address}")
+            request=client_socket.recv(4096)
+            print("request recieved")
+            print(request.decode())
+            client_socket.close()
     
 if __name__== "__main__":
     main()  
