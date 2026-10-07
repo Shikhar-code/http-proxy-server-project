@@ -1,12 +1,19 @@
 import socket
 import threading
-import time
+from datetime import datetime
 HOST="127.0.0.1"
 PORT=8080
+log_lock=threading.Lock()
+
+def log_request(client_address,host,request_line):
+    timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with log_lock:
+        with open("proxy.log","a") as log_file:
+            log_file.write(f"{timestamp} | Client: {client_address[0]}:{client_address[1]} | "f"Host: {host} | {request_line}\n")
+
 
 def handle_client(client_socket,client_address):
     print(f"connection from {client_address}")
-    time.sleep(5)
     request=client_socket.recv(4096)
     request_text=request.decode()
     print("request recieved")
@@ -18,6 +25,7 @@ def handle_client(client_socket,client_address):
             host=line.split(":",1)[1].strip()
             break
     print(f"Destination host: {host}")
+    log_request(client_address, host, lines[0])
     request_parts=lines[0].split()
     url=request_parts[1]
     path=url.split(host,1)[1]
