@@ -11,7 +11,15 @@ def log_request(client_address,host,request_line):
         with open("proxy.log","a") as log_file:
             log_file.write(f"{timestamp} | Client: {client_address[0]}:{client_address[1]} | "f"Host: {host} | {request_line}\n")
 
-
+def is_blocked(host):
+    hostname=host.split(":",1)[0].lower()
+    with open("blocked.txt","r") as blocked_file:
+        for line in file:
+            blocked_domain=line.strip().lower()
+            if hostname==blocked_domain:
+                return True
+        return False
+            
 def handle_client(client_socket,client_address):
     print(f"connection from {client_address}")
     request=client_socket.recv(4096)
@@ -26,6 +34,13 @@ def handle_client(client_socket,client_address):
             break
     print(f"Destination host: {host}")
     log_request(client_address, host, lines[0])
+    if is_blocked(host):
+        print(f"Blocked request to {host}")
+        body = "403 Forbidden - This website is blocked by the proxy."
+        response = ("HTTP/1.1 403 Forbidden\r\n" "Content-Type: text/plain\r\n" f"Content-Length: {len(body)}\r\n" "Connection: close\r\n" "\r\n"+ body)
+        client_socket.sendall(response.encode())
+        client_socket.close()
+        return
     request_parts=lines[0].split()
     url=request_parts[1]
     path=url.split(host,1)[1]
