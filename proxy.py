@@ -13,7 +13,7 @@ def log_request(client_address,host,request_line):
 
 def is_blocked(host):
     hostname=host.split(":",1)[0].lower()
-    with open("blocked.txt","r") as blocked_file:
+    with open("blocked_domains.txt","r") as file:
         for line in file:
             blocked_domain=line.strip().lower()
             if hostname==blocked_domain:
@@ -22,7 +22,11 @@ def is_blocked(host):
             
 def handle_client(client_socket,client_address):
     print(f"connection from {client_address}")
+    client_socket.settimeout(10)
     request=client_socket.recv(4096)
+    if not request:
+        client_socket.close()
+        return
     request_text=request.decode()
     print("request recieved")
     print(request_text)
@@ -32,6 +36,12 @@ def handle_client(client_socket,client_address):
         if line.lower().startswith("host:"):
             host=line.split(":",1)[1].strip()
             break
+    if host is None:
+            body = "400 Bad Request - Host header missing."
+            response = ("HTTP/1.1 400 Bad Request\r\n" "Content-Type: text/plain\r\n" f"Content-Length: {len(body)}\r\n" "Connection: close\r\n" "\r\n"+ body)
+            client_socket.sendall(response.encode())
+            client_socket.close()
+            return
     print(f"Destination host: {host}")
     log_request(client_address, host, lines[0])
     if is_blocked(host):
@@ -48,7 +58,16 @@ def handle_client(client_socket,client_address):
         path="/"
     lines[0]=f"{request_parts[0]} {path} {request_parts[2]}"
     destination_socket=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-    destination_socket.connect((host,80))
+    destination_socket.settimeout(10)
+    try:
+        destination_socket.connect((host,80))
+    except (socket.timeout,socket.gaierror,ConnectionError):
+            body = "502 Bad Gateway - Destination server could not be reached."
+            response = ("HTTP/1.1 502 Bad Gateway\r\n" "Content-Type: text/plain\r\n" f"Content-Length: {len(body)}\r\n" "Connection: close\r\n" "\r\n"+ body)
+            client_socket.sendall(response.encode())
+            destination_socket.close()
+            client_socket.close()
+            return
     for i in range (len(lines)):
         if lines[i].lower().startswith("proxy-connection:"):
             lines[i]="Connection: close"
