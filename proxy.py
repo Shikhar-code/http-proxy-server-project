@@ -1,6 +1,8 @@
 import socket
 import threading
 from datetime import datetime
+from cache import get_response, save_response
+
 HOST="127.0.0.1"
 PORT=8080
 log_lock=threading.Lock()
@@ -52,11 +54,23 @@ def handle_client(client_socket,client_address):
         client_socket.close()
         return
     request_parts=lines[0].split()
+    method=request_parts[0].upper()
     url=request_parts[1]
     path=url.split(host,1)[1]
     if path=="":
         path="/"
     lines[0]=f"{request_parts[0]} {path} {request_parts[2]}"
+    cache_key=host+path
+    if method=="GET":
+        cached_response = get_response(cache_key)
+        if cached_response is not None:
+            print(f"CACHE HIT {cache_key}")
+            client_socket.sendall(cached_response)
+            client_socket.close()
+            return
+        
+        print(f"CACHE MISS: {cache_key}")
+            
     destination_socket=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
     destination_socket.settimeout(10)
     try:
@@ -73,11 +87,16 @@ def handle_client(client_socket,client_address):
             lines[i]="Connection: close"
     forward_request="\r\n".join(lines)
     destination_socket.sendall(forward_request.encode())
+    response_data = bytearray()
     while True:
         response=destination_socket.recv(4096)
         if not response:
             break
+        response_data.extend(response)
         client_socket.sendall(response)
+    if method=="GET":
+        if response_data.startswith(b"HTTP/1.1 200") or response_data.startswith(b"HTTP/1.0 200"):
+            save_response(cache_key, response_data)
     destination_socket.close()
     client_socket.close()
 
