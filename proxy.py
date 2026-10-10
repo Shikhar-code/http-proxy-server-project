@@ -45,6 +45,22 @@ def handle_client(client_socket,client_address):
             client_socket.close()
             return
     print(f"Destination host: {host}")
+    if ":" in host:
+        destination_host,port_text=host.rsplit(":",1)
+        try:
+            destination_port=int(port_text)
+        except ValueError:
+            destination_port=None
+    else:
+        destination_host=host
+        destination_port=80
+    if not destination_port or destination_port is None or not (1<=destination_port<=65535):
+            body = "400 Bad Request - Invalid host or port."
+
+            response = ("HTTP/1.1 400 Bad Request\r\n""Content-Type: text/plain\r\n"f"Content-Length: {len(body)}\r\n""Connection: close\r\n""\r\n"+ body)
+            client_socket.sendall(response.encode())
+            client_socket.close()
+            return
     log_request(client_address, host, lines[0])
     if is_blocked(host):
         print(f"Blocked request to {host}")
@@ -74,7 +90,7 @@ def handle_client(client_socket,client_address):
     destination_socket=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
     destination_socket.settimeout(10)
     try:
-        destination_socket.connect((host,80))
+        destination_socket.connect((destination_host, destination_port))
     except (socket.timeout,socket.gaierror,ConnectionError):
             body = "502 Bad Gateway - Destination server could not be reached."
             response = ("HTTP/1.1 502 Bad Gateway\r\n" "Content-Type: text/plain\r\n" f"Content-Length: {len(body)}\r\n" "Connection: close\r\n" "\r\n"+ body)
