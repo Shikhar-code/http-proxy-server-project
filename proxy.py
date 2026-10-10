@@ -70,6 +70,12 @@ def handle_client(client_socket,client_address):
         client_socket.close()
         return
     request_parts=lines[0].split()
+    if len(request_parts)!=3:
+        body = "400 Bad Request - Invalid request line."
+        response = ("HTTP/1.1 400 Bad Request\r\n" "Content-Type: text/plain\r\n" f"Content-Length: {len(body)}\r\n" "Connection: close\r\n" "\r\n"+ body)
+        client_socket.sendall(response.encode())
+        client_socket.close()
+        return
     method=request_parts[0].upper()
     url=request_parts[1]
     path=url.split(host,1)[1]
