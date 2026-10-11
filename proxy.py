@@ -106,7 +106,14 @@ def process_client(client_socket,client_address):
         destination_socket.sendall(forward_request.encode())
         response_data = bytearray()
         while True:
-            response=destination_socket.recv(4096)
+            try:
+                response=destination_socket.recv(4096)
+            except socket.timeout:
+                if not response_data:
+                    send_error(client_socket, 504, "Gateway Timeout", "Took too long to respond")
+                else:
+                    print("timeout after partial response")
+                    return
             if not response:
                 break
             response_data.extend(response)
@@ -120,6 +127,8 @@ def process_client(client_socket,client_address):
 def handle_client(client_socket,client_address):
     try:
         process_client(client_socket,client_address)
+    except OSError as error:
+        print(f"Error handling client {client_address}: {error}")
     finally:
         client_socket.close()
 
