@@ -74,13 +74,19 @@ def process_client(client_socket,client_address):
         client_socket.close()
         return
     method=request_parts[0].upper()
+    cache_allowed=method=="GET"
+    for line in lines:
+        header=line.lower()
+        if header.startswith("cookie:") or header.startswith("authorization:"):
+           cache_allowed=False
+           break
     url=request_parts[1]
     path=url.split(host,1)[1]
     if path=="":
         path="/"
     lines[0]=f"{request_parts[0]} {path} {request_parts[2]}"
     cache_key=host+path
-    if method=="GET":
+    if cache_allowed:
         cached_response = get_response(cache_key)
         if cached_response is not None:
             print(f"CACHE HIT {cache_key}")
@@ -118,7 +124,27 @@ def process_client(client_socket,client_address):
                 break
             response_data.extend(response)
             client_socket.sendall(response)
-        if method=="GET":
+        header_end=response_data.find(b"\r\n\r\n")
+        response_cache_allowed=header_end!=1
+        if response_cache_allowed:
+            response_headers=response_data[:header_end].decode("iso-8859-1")
+            header_lines=response_headers.lower().split("\r\n")
+            for header in header_lines[1:]:
+                if header.startswith("set-cookie:") or header.startswith("vary:"):
+                    response_cache_allowed = False
+                    break
+
+                if header.startswith("cache-control:"):
+                    if any(rule in header for rule in
+                        ("no-store", "private", "no-cache", "max-age=")):
+                        response_cache_allowed = False
+                        break
+
+                if header.startswith("pragma:") and "no-cache" in header:
+                    response_cache_allowed = False
+                    break
+        if cache_allowed and response_cache_allowed:
+            print("CACHE BYPASS: Response is not eligible for caching")
             if response_data.startswith(b"HTTP/1.1 200") or response_data.startswith(b"HTTP/1.0 200"):
                 save_response(cache_key, response_data)
     client_socket.close()
