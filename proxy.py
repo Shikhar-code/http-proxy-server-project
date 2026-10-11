@@ -21,7 +21,13 @@ def is_blocked(host):
             if hostname==blocked_domain:
                 return True
         return False
-            
+    
+    
+def send_error(client_socket, code, reason,message):
+    body=message.encode("utf-8")
+    response=f"HTTP/1.1 {code} {reason}\r\n" "Content-Type: text/plain\r\n" f"Content-Length: {len(body)}\r\n" "Connection: close\r\n" "\r\n"
+    client_socket.sendall(response.encode("utf-8")+body)
+
 def handle_client(client_socket,client_address):
     print(f"connection from {client_address}")
     client_socket.settimeout(10)
@@ -39,9 +45,7 @@ def handle_client(client_socket,client_address):
             host=line.split(":",1)[1].strip()
             break
     if host is None:
-            body = "400 Bad Request - Host header missing."
-            response = ("HTTP/1.1 400 Bad Request\r\n" "Content-Type: text/plain\r\n" f"Content-Length: {len(body)}\r\n" "Connection: close\r\n" "\r\n"+ body)
-            client_socket.sendall(response.encode())
+            send_error(client_socket, 400, "Bad Request", "Host header missing.")
             client_socket.close()
             return
     print(f"Destination host: {host}")
@@ -55,25 +59,18 @@ def handle_client(client_socket,client_address):
         destination_host=host
         destination_port=80
     if not destination_port or destination_port is None or not (1<=destination_port<=65535):
-            body = "400 Bad Request - Invalid host or port."
-
-            response = ("HTTP/1.1 400 Bad Request\r\n""Content-Type: text/plain\r\n"f"Content-Length: {len(body)}\r\n""Connection: close\r\n""\r\n"+ body)
-            client_socket.sendall(response.encode())
+            send_error(client_socket, 400, "Bad Request", "Invalid host or port.")
             client_socket.close()
             return
     log_request(client_address, host, lines[0])
     if is_blocked(host):
         print(f"Blocked request to {host}")
-        body = "403 Forbidden - This website is blocked by the proxy."
-        response = ("HTTP/1.1 403 Forbidden\r\n" "Content-Type: text/plain\r\n" f"Content-Length: {len(body)}\r\n" "Connection: close\r\n" "\r\n"+ body)
-        client_socket.sendall(response.encode())
+        send_error(client_socket, 403, "Forbidden", "Website blocked by proxy.")
         client_socket.close()
         return
     request_parts=lines[0].split()
     if len(request_parts)!=3:
-        body = "400 Bad Request - Invalid request line."
-        response = ("HTTP/1.1 400 Bad Request\r\n" "Content-Type: text/plain\r\n" f"Content-Length: {len(body)}\r\n" "Connection: close\r\n" "\r\n"+ body)
-        client_socket.sendall(response.encode())
+        send_error(client_socket, 400, "Bad Request", "Invalid HTTP request line.")
         client_socket.close()
         return
     method=request_parts[0].upper()
@@ -98,9 +95,7 @@ def handle_client(client_socket,client_address):
     try:
         destination_socket.connect((destination_host, destination_port))
     except (socket.timeout,socket.gaierror,ConnectionError):
-            body = "502 Bad Gateway - Destination server could not be reached."
-            response = ("HTTP/1.1 502 Bad Gateway\r\n" "Content-Type: text/plain\r\n" f"Content-Length: {len(body)}\r\n" "Connection: close\r\n" "\r\n"+ body)
-            client_socket.sendall(response.encode())
+            send_error(client_socket, 502, "Bad Gateway", "Cannot reach destination server.")
             destination_socket.close()
             client_socket.close()
             return
