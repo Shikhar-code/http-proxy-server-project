@@ -28,7 +28,7 @@ def send_error(client_socket, code, reason,message):
     response=f"HTTP/1.1 {code} {reason}\r\n" "Content-Type: text/plain\r\n" f"Content-Length: {len(body)}\r\n" "Connection: close\r\n" "\r\n"
     client_socket.sendall(response.encode("utf-8")+body)
 
-def handle_client(client_socket,client_address):
+def process_client(client_socket,client_address):
     print(f"connection from {client_address}")
     client_socket.settimeout(10)
     request=client_socket.recv(4096)
@@ -90,35 +90,38 @@ def handle_client(client_socket,client_address):
         
         print(f"CACHE MISS: {cache_key}")
             
-    destination_socket=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-    destination_socket.settimeout(10)
-    try:
-        destination_socket.connect((destination_host, destination_port))
-    except (socket.timeout,socket.gaierror,ConnectionError):
-            send_error(client_socket, 502, "Bad Gateway", "Cannot reach destination server.")
-            destination_socket.close()
-            client_socket.close()
-            return
-    for i in range (len(lines)):
-        if lines[i].lower().startswith("proxy-connection:"):
-            lines[i]="Connection: close"
-    forward_request="\r\n".join(lines)
-    destination_socket.sendall(forward_request.encode())
-    response_data = bytearray()
-    while True:
-        response=destination_socket.recv(4096)
-        if not response:
-            break
-        response_data.extend(response)
-        client_socket.sendall(response)
-    if method=="GET":
-        if response_data.startswith(b"HTTP/1.1 200") or response_data.startswith(b"HTTP/1.0 200"):
-            save_response(cache_key, response_data)
-    destination_socket.close()
+    with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as destination_socket:
+        destination_socket.settimeout(10)
+        try:
+            destination_socket.connect((destination_host, destination_port))
+        except (socket.timeout,socket.gaierror,ConnectionError):
+                send_error(client_socket, 502, "Bad Gateway", "Cannot reach destination server.")
+                destination_socket.close()
+                client_socket.close()
+                return
+        for i in range (len(lines)):
+            if lines[i].lower().startswith("proxy-connection:"):
+                lines[i]="Connection: close"
+        forward_request="\r\n".join(lines)
+        destination_socket.sendall(forward_request.encode())
+        response_data = bytearray()
+        while True:
+            response=destination_socket.recv(4096)
+            if not response:
+                break
+            response_data.extend(response)
+            client_socket.sendall(response)
+        if method=="GET":
+            if response_data.startswith(b"HTTP/1.1 200") or response_data.startswith(b"HTTP/1.0 200"):
+                save_response(cache_key, response_data)
     client_socket.close()
 
     
-    
+def handle_client(client_socket,client_address):
+    try:
+        process_client(client_socket,client_address)
+    finally:
+        client_socket.close()
 
 def main():
     server_socket=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
