@@ -2,6 +2,7 @@ import socket
 import threading
 from datetime import datetime
 from cache import get_response, save_response
+from urllib.parse import urlsplit
 
 HOST="127.0.0.1"
 PORT=8080
@@ -74,16 +75,35 @@ def process_client(client_socket,client_address):
         client_socket.close()
         return
     method=request_parts[0].upper()
+    if method not in ("GET","HEAD"):
+        send_error(client_socket, 501, "Not Implemented", "Only GET and HEAD methods are supported.")
+        return
     cache_allowed=method=="GET"
     for line in lines:
         header=line.lower()
         if header.startswith("cookie:") or header.startswith("authorization:"):
            cache_allowed=False
            break
-    url=request_parts[1]
-    path=url.split(host,1)[1]
-    if path=="":
-        path="/"
+    url = request_parts[1]
+
+    if url.startswith("http://"):
+        parsed_url = urlsplit(url)
+
+        if parsed_url.netloc.lower() != host.lower():
+            send_error(client_socket, 400, "Bad Request", "Host does not match URL.")
+            return
+
+        path = parsed_url.path or "/"
+
+        if parsed_url.query:
+            path += "?" + parsed_url.query
+
+    elif url.startswith("/") and not url.startswith("//"):
+        path = url
+
+    else:
+        send_error(client_socket, 400, "Bad Request", "Unsupported request URL.")
+        return
     lines[0]=f"{request_parts[0]} {path} {request_parts[2]}"
     cache_key=host+path
     if cache_allowed:
@@ -119,13 +139,13 @@ def process_client(client_socket,client_address):
                     send_error(client_socket, 504, "Gateway Timeout", "Took too long to respond")
                 else:
                     print("timeout after partial response")
-                    return
+                return
             if not response:
                 break
             response_data.extend(response)
             client_socket.sendall(response)
         header_end=response_data.find(b"\r\n\r\n")
-        response_cache_allowed=header_end!=1
+        response_cache_allowed=header_end!=-1
         if response_cache_allowed:
             response_headers=response_data[:header_end].decode("iso-8859-1")
             header_lines=response_headers.lower().split("\r\n")
@@ -144,9 +164,10 @@ def process_client(client_socket,client_address):
                     response_cache_allowed = False
                     break
         if cache_allowed and response_cache_allowed:
-            print("CACHE BYPASS: Response is not eligible for caching")
             if response_data.startswith(b"HTTP/1.1 200") or response_data.startswith(b"HTTP/1.0 200"):
                 save_response(cache_key, response_data)
+        if cache_allowed and not response_cache_allowed:
+            print("CACHE BYPASS: Response is not eligible for caching")
     client_socket.close()
 
     
